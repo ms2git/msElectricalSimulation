@@ -1,72 +1,81 @@
-classdef threePhaseInputSystem < msEloSimulation.basic.compoundElement
+classdef threePhaseInputSystem < msElectricSimulation.modelling.compound
+    
+    
+    properties (Constant)
+        
+        
+        A_albe_abc=[2/3 -1/3 -1/3; 0 1/sqrt(3) -1/sqrt(3)];
+        
+        
+    end
     
     
     properties
-        lABC
+        
+        
+        lAH
+        lBH
+        lCH
+        lAL
+        lBL
+        lCL
+        
+        
     end
     
     
     methods
         
         
-        function obj=threePhaseInputSystem(id_, lA_, lB_, lC_)
-            obj=obj@msEloSimulation.basic.compoundElement(id_);
-            
-            obj.lABC=[lA_, lB_, lC_];
+        function obj=threePhaseInputSystem(system_, id_, lAH_, lBH_, lCH_, lAL_, lBL_, lCL_)
+            obj=obj@msElectricSimulation.modelling.compound(system_, id_);
+            obj.lAH=lAH_;
+            obj.lBH=lBH_;
+            obj.lCH=lCH_;
+            obj.lAL=lAL_;
+            obj.lBL=lBL_;
+            obj.lCL=lCL_;
         end
         
         
-        function hBlock=createSimulinkEval(obj, hSystem)
-            [hBlock, hSys]=hSystem.addSubsystem([obj.id '_eval']);
+        function ret=getZeroConstraint(obj, hLines)
+            ret=zeros(0, numel(hLines));
+        end
+        
+        
+    end
+    
+    
+    methods % code generation
+        
+        
+        function ret=getCCodeId(obj)
+            ret=['COMP_' obj.id];
+        end
+        
+        
+        function [ret, outputId]=getCCodeEvaluation(obj)
+            ret=cell(1, 0);
+            outputId=cell(1, 0);
+            outputId{end+1}='currentA';
+            outA=[obj.getCCodeId '_' outputId{end}];
+            ret{end+1}=[outA '=' obj.lAH.getCCodeId('current') '-' obj.lAL.getCCodeId('current') ';'];
+            outputId{end+1}='currentB';
+            outB=[obj.getCCodeId '_' outputId{end}];
+            ret{end+1}=[outB '=' obj.lBH.getCCodeId('current') '-' obj.lBL.getCCodeId('current') ';'];
+            outputId{end+1}='currentC';
+            outC=[obj.getCCodeId '_' outputId{end}];
+            ret{end+1}=[outC '=' obj.lCH.getCCodeId('current') '-' obj.lCL.getCCodeId('current') ';'];
+            outputId{end+1}='currentSum';
+            ret{end+1}=[obj.getCCodeId '_' outputId{end} '=' outA '+' outB '+' outC ';'];
             
-            hCurrent=hSys.addInport('current');
-            hFrom=hSystem.addFrom('current');
-            hSystem.connect(hFrom, 1, hBlock, 1);
-            hSelectStr=arrayfun(@(x) x.id, obj.lABC, 'UniformOutput', false);
-            hBusS=hSys.addBusSelector(hSelectStr, 'OutputAsBus', 'on');
-            hSys.connect(hCurrent, 1, hBusS, 1)
-            hReshape=hSys.addReshape([3,1]);
-            hSys.connect(hBusS, 1, hReshape, 1)
-            hCurrent=hSys.addGoto('current');
-            hSys.connect(hReshape, 1, hCurrent, 1);
+            outputId{end+1}='currentAlpha';
+            ret{end+1}=[obj.getCCodeId '_' outputId{end} '=' outA ';'];
+            outputId{end+1}='currentBeta';
+            ret{end+1}=[obj.getCCodeId '_' outputId{end} '=(' obj.value2Cstr(1/sqrt(3)) ')*(' outA ')+(' ...
+                obj.value2Cstr(2/sqrt(3)) ')*(' outB ');'];
             
-            hGain=hSys.addGain(obj.A_albe_abc, ...
-                'Multiplication', 'Matrix(K*u) (u vector)');
-            hCurrent=hSys.addFrom('current');
-            hSys.connect(hCurrent, 1, hGain, 1);
-            h=hSys.addGoto('current_albe');
-            hSys.connect(hGain, 1, h, 1);
-            hDemux=hSys.addDemux(2);
-            hSys.connect(hGain, 1, hDemux, 1);
-            hC=hSys.addReIm2Complex;
-            hSys.connect(hDemux, 1, hC, 1)
-            hSys.connect(hDemux, 2, hC, 2)
-            hMP=hSys.addComplex2MagnitudePhase;
-            hSys.connect(hC, 1, hMP, 1);
-            h=hSys.addGoto('current_albe_magnitude');
-            hSys.connect(hMP, 1, h, 1);
-            h=hSys.addGoto('current_albe_phase');
-            hSys.connect(hMP, 2, h, 1);
-            hSum=hSys.addSum('+');
-            hSys.connect(hGain, 1, hSum, 1);
-            h=hSys.addGoto('current_albe_currentSum');
-            hSys.connect(hSum, 1, h, 1);
-            h=hSys.addGoto('current_abc_currentSum');
-            hSum=hSys.addSum('+');
-            hSys.connect(hSum, 1, h, 1);
-            hSys.connect(hCurrent, 1, hSum, 1);
-            
-            fn={'current_albe', 'current_albe_magnitude', 'current_albe_phase', ...
-                'current_albe_currentSum', 'current_abc_currentSum'};
-            hBusC=hSys.addBusCreator(numel(fn));
-            for idx=1:numel(fn)
-                hFrom=hSys.addFrom(fn{idx});
-                hSys.connect(hFrom, 1, hBusC, idx, fn{idx});
-            end
-            hOut=hSys.addOutport('data');
-            hSys.connect(hBusC, 1, hOut, 1)
-            
-            hSys.arrange;
+            outputId=cellfun(@(x) {[obj.id filesep x]}, outputId, 'UniformOutput', false);
         end
         
         
